@@ -26,6 +26,12 @@
 <main>
   <!-- ========== 학습 ========== -->
   <section id="study" class="view on">
+    <div id="mode-switch">
+      <button data-m="write" class="on">서술형</button>
+      <button data-m="choice">객관식</button>
+      <button data-m="mix">섞기</button>
+    </div>
+
     <div id="queue-bar">
       <span id="queue-count">—</span>
       <span id="queue-meta"></span>
@@ -47,6 +53,8 @@
       <h1 id="c-q"></h1>
 
       <div id="recall-hint">머릿속으로 또는 소리 내어 답해보세요.</div>
+
+      <div id="choices" class="hidden"></div>
 
       <textarea id="c-input" rows="4" placeholder="답을 적어보세요 (선택). 채점을 켜두면 LLM이 모범답안과 비교해 줍니다."></textarea>
 

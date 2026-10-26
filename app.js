@@ -9,6 +9,7 @@ const DEFAULT_CONFIG = {
   newPerDay: 8,
   maxPerDay: 60,
   cats: null,            // null = 전체. 배열이면 해당 slug 만.
+  mode: 'write',         // write | choice | mix
   provider: 'none',
   key: '',
   model: '',
@@ -30,7 +31,10 @@ const PENDING = new Map();        // slug -> Promise
 let progress = load(LS_PROGRESS, {cards: {}, log: {}});
 let config   = Object.assign({}, DEFAULT_CONFIG, load(LS_CONFIG, {}));
 
+let MCQ = new Set();   // 선택지가 준비된 문항 id
 let queue = [];        // 이번 세션에 풀 카드 id
+let asChoice = false;  // 지금 카드를 객관식으로 낼지
+let answered = false;  // 객관식 선택을 이미 했는지
 let current = null;    // 현재 질문 객체
 let revealed = false;
 
@@ -134,8 +138,10 @@ function buildQueue(extra = 0){
   const day = todayKey();
   const done = progress.log[day] || {new:0, rev:0};
 
+  const usable = id => config.mode !== 'choice' || MCQ.has(id);
   const due = [], fresh = [];
   for (const q of QUESTIONS){
+    if (!usable(q.id)) continue;
     const c = progress.cards[q.id];
     if (c && c.seen){
       if (c.due <= now) due.push([c.due, q.id]);
@@ -222,22 +228,79 @@ function showCard(){
 
   current = BY_ID.get(queue[0]);
   const st = state(current.id);
+  const card0 = progress.cards[current.id];
+  // 섞기 모드에서는 같은 카드를 볼 때마다 서술형과 객관식을 번갈아 낸다
+  asChoice = MCQ.has(current.id) && (config.mode === 'choice' ||
+    (config.mode === 'mix' && ((card0 && card0.reps || 0) % 2 === 0)));
+  answered = false;
   $('#c-cat').textContent = current.category;
   $('#c-sec').textContent = current.section;
   $('#c-id').textContent = current.id + (st === 'new' ? ' · 새 질문' : '');
   $('#c-q').textContent = current.question;
   $('#c-input').value = '';
+  $('#c-input').classList.toggle('hidden', asChoice);
+  $('#choices').classList.toggle('hidden', !asChoice);
+  $('#choices').innerHTML = '';
+  $('#recall-hint').textContent = asChoice
+    ? '맞는 것을 고르세요.'
+    : '머릿속으로 또는 소리 내어 답해보세요.';
   $('#answer').classList.add('hidden');
   $('#btn-more').classList.remove('hidden');
   $('#grade-box').classList.add('hidden');
   $('#grade-box').innerHTML = '';
-  $('#btn-reveal').classList.remove('hidden');
-  $('#btn-grade').classList.toggle('hidden', config.provider === 'none');
+  $('#btn-reveal').classList.toggle('hidden', asChoice);
+  $('#btn-grade').classList.toggle('hidden', asChoice || config.provider === 'none');
   $('#btn-grade').disabled = false;
   $('#btn-grade').textContent = '채점';
   $('#recall-hint').classList.remove('hidden');
   window.scrollTo({top:0});
+  if (asChoice) renderChoices();
   prefetchNext();
+}
+
+/* ============================ 객관식 ============================ */
+async function renderChoices(){
+  const q = current;
+  const a = await getAnswer(q);
+  if (!a || !a.choices){ asChoice = false; showCard(); return; }
+  if (current !== q) return;                 // 로딩 중에 카드가 넘어갔으면 버린다
+
+  $('#c-q').textContent = a.choices.q || q.question;
+
+  // options[0] 이 정답. 매번 섞어 위치를 외우지 못하게 한다
+  const opts = a.choices.options.map((text, i) => ({text, ok: i === 0}));
+  for (let i = opts.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [opts[i], opts[j]] = [opts[j], opts[i]];
+  }
+  $('#choices').innerHTML = opts.map((o, i) =>
+    `<button class="opt" data-ok="${o.ok ? 1 : 0}">` +
+    `<span class="mark">${'ABCD'[i]}</span><span>${inline(esc(o.text))}</span></button>`
+  ).join('') + '<div id="choice-verdict" class="hidden"></div>';
+}
+
+async function pickChoice(btn){
+  if (answered) return;
+  answered = true;
+  const ok = btn.dataset.ok === '1';
+  $$('.opt').forEach(b => {
+    b.disabled = true;
+    if (b.dataset.ok === '1') b.classList.add('correct');
+    else if (b === btn) b.classList.add('wrong');
+    else b.classList.add('dim');
+  });
+  const v = $('#choice-verdict');
+  const a = await getAnswer(current);
+  v.className = ok ? 'ok' : 'no';
+  v.textContent = (ok ? '정답' : '오답') + (a.choices.why ? ' · ' + a.choices.why : '');
+
+  const card = progress.cards[current.id] || newCard();
+  card.mcqTries = (card.mcqTries || 0) + 1;
+  if (ok) card.mcqHits = (card.mcqHits || 0) + 1;
+  progress.cards[current.id] = card;
+  save(LS_PROGRESS, progress);
+
+  reveal();
 }
 
 function fmtWhen(ts){
@@ -286,6 +349,8 @@ async function reveal(){
     const g = +b.dataset.g;
     b.querySelector('small').textContent = nextLabel(card, g);
   });
+  $('#answer').querySelector('h3').textContent =
+    $('#a-summary').classList.contains('hidden') ? '모범답안' : '핵심';
   $('#answer').classList.remove('hidden');
 }
 
@@ -505,6 +570,14 @@ function renderSettings(){
 
 function saveConfig(){ save(LS_CONFIG, config); }
 
+function renderMode(){
+  $$('#mode-switch button').forEach(b => {
+    b.classList.toggle('on', b.dataset.m === config.mode);
+    // 선택지가 하나도 없으면 객관식 모드를 막는다
+    if (b.dataset.m !== 'write') b.disabled = MCQ.size === 0;
+  });
+}
+
 /* ============================ 이벤트 ============================ */
 function wire(){
   $('#topbar').addEventListener('click', e => {
@@ -515,6 +588,18 @@ function wire(){
     if (b.dataset.view === 'stats') renderStats();
     if (b.dataset.view === 'settings') renderSettings();
     window.scrollTo({top:0});
+  });
+
+  $('#mode-switch').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b || b.disabled) return;
+    config.mode = b.dataset.m;
+    saveConfig(); renderMode(); buildQueue(); showCard();
+  });
+
+  $('#choices').addEventListener('click', e => {
+    const b = e.target.closest('.opt');
+    if (b) pickChoice(b);
   });
 
   $('#btn-reveal').addEventListener('click', reveal);
@@ -616,6 +701,10 @@ function wire(){
       if (!revealed) reveal();
       else if (!$('#btn-more').classList.contains('hidden')) $('#btn-more').click();
     }
+    if (asChoice && !answered && ['1','2','3','4'].includes(e.key)){
+      const b = $$('.opt')[+e.key - 1];
+      if (b) { pickChoice(b); return; }
+    }
     if (revealed && ['1','2','3'].includes(e.key)) rate(+e.key - 1);
   });
 }
@@ -630,11 +719,16 @@ async function main(){
     ]);
     QUESTIONS = q; CATS = c;
     BY_ID = new Map(q.map(x => [x.id, x]));
+    try {
+      MCQ = new Set(await fetch('data/mcq-index.json').then(r => r.json()));
+    } catch { MCQ = new Set(); }
+    if (config.mode !== 'write' && MCQ.size === 0) config.mode = 'write';
   } catch(e){
     $('#queue-bar').textContent = '데이터를 불러오지 못했습니다: ' + e.message;
     return;
   }
   $('#s-build').textContent = `질문 ${QUESTIONS.length}개 · 출처 github.com/fru1tworld/cs-basic`;
+  renderMode();
   buildQueue();
   showCard();
 
