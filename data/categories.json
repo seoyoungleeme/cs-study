@@ -1,0 +1,97 @@
+[
+ {
+  "slug": "ds",
+  "name": "자료구조",
+  "count": 70
+ },
+ {
+  "slug": "arch",
+  "name": "컴퓨터구조",
+  "count": 60
+ },
+ {
+  "slug": "network",
+  "name": "네트워크",
+  "count": 111
+ },
+ {
+  "slug": "db",
+  "name": "데이터베이스",
+  "count": 84
+ },
+ {
+  "slug": "os",
+  "name": "운영체제",
+  "count": 122
+ },
+ {
+  "slug": "etc",
+  "name": "개발상식",
+  "count": 67
+ },
+ {
+  "slug": "plt",
+  "name": "프로그래밍언어론",
+  "count": 35
+ },
+ {
+  "slug": "java",
+  "name": "Java",
+  "count": 45
+ },
+ {
+  "slug": "javascript",
+  "name": "JavaScript",
+  "count": 30
+ },
+ {
+  "slug": "python",
+  "name": "Python",
+  "count": 25
+ },
+ {
+  "slug": "go",
+  "name": "Go",
+  "count": 21
+ },
+ {
+  "slug": "system-design",
+  "name": "시스템설계",
+  "count": 102
+ },
+ {
+  "slug": "websocket",
+  "name": "WebSocket",
+  "count": 30
+ },
+ {
+  "slug": "redis",
+  "name": "Redis",
+  "count": 34
+ },
+ {
+  "slug": "elasticsearch",
+  "name": "Elasticsearch",
+  "count": 54
+ },
+ {
+  "slug": "kafka",
+  "name": "Kafka",
+  "count": 54
+ },
+ {
+  "slug": "docker",
+  "name": "Docker",
+  "count": 104
+ },
+ {
+  "slug": "kubernetes",
+  "name": "Kubernetes",
+  "count": 144
+ },
+ {
+  "slug": "security",
+  "name": "보안",
+  "count": 32
+ }
+]

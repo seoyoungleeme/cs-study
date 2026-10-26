@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+<title>CS 면접 스터디</title>
+<meta name="description" content="CS 면접 질문 1224개 간격반복 학습">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0f1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CS 스터디">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<header id="topbar">
+  <button class="tab on" data-view="study">학습</button>
+  <button class="tab" data-view="browse">둘러보기</button>
+  <button class="tab" data-view="stats">진도</button>
+  <button class="tab" data-view="settings">설정</button>
+</header>
+
+<main>
+  <!-- ========== 학습 ========== -->
+  <section id="study" class="view on">
+    <div id="queue-bar">
+      <span id="queue-count">—</span>
+      <span id="queue-meta"></span>
+    </div>
+
+    <div id="empty" class="hidden">
+      <h2>오늘 할 몫은 끝났습니다</h2>
+      <p id="empty-sub"></p>
+      <button id="btn-extra" class="wide ghost">10개 더 풀기</button>
+    </div>
+
+    <article id="card" class="hidden">
+      <div class="card-head">
+        <span class="chip" id="c-cat"></span>
+        <span class="chip ghost" id="c-sec"></span>
+        <span class="chip ghost" id="c-id"></span>
+      </div>
+
+      <h1 id="c-q"></h1>
+
+      <div id="recall-hint">머릿속으로 또는 소리 내어 답해보세요.</div>
+
+      <textarea id="c-input" rows="4" placeholder="답을 적어보세요 (선택). 채점을 켜두면 LLM이 모범답안과 비교해 줍니다."></textarea>
+
+      <div class="row">
+        <button id="btn-reveal" class="wide primary">답 보기</button>
+        <button id="btn-grade" class="wide" title="LLM 채점">채점</button>
+      </div>
+
+      <div id="grade-box" class="hidden"></div>
+
+      <div id="answer" class="hidden">
+        <h3>모범답안</h3>
+        <div id="a-body"></div>
+        <div id="a-src"></div>
+        <div id="rate">
+          <button class="rate again" data-g="0">모름<small>다시</small></button>
+          <button class="rate hard"  data-g="1">애매<small></small></button>
+          <button class="rate good"  data-g="2">앎<small></small></button>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <!-- ========== 둘러보기 ========== -->
+  <section id="browse" class="view">
+    <input id="search" type="search" placeholder="질문 검색 (예: TLB, 인덱스, 합의)">
+    <div id="cat-chips"></div>
+    <div id="browse-list"></div>
+  </section>
+
+  <!-- ========== 진도 ========== -->
+  <section id="stats" class="view">
+    <div id="stat-top"></div>
+    <h3>최근 30일</h3>
+    <div id="heat"></div>
+    <h3>카테고리별</h3>
+    <div id="cat-table"></div>
+  </section>
+
+  <!-- ========== 설정 ========== -->
+  <section id="settings" class="view">
+    <h3>하루 분량</h3>
+    <label class="field">
+      <span>새 질문 (하루)</span>
+      <input id="s-new" type="number" min="0" max="100" step="1">
+    </label>
+    <label class="field">
+      <span>복습 상한 (하루)</span>
+      <input id="s-max" type="number" min="5" max="400" step="5">
+    </label>
+
+    <h3>학습 범위</h3>
+    <div id="s-cats" class="hint">카테고리를 끄면 새 질문이 나오지 않습니다. 이미 시작한 카드의 복습은 계속됩니다.</div>
+    <div id="s-cat-list"></div>
+
+    <h3>LLM 채점</h3>
+    <label class="field">
+      <span>제공자</span>
+      <select id="s-provider">
+        <option value="none">끄기</option>
+        <option value="gemini">Google Gemini (무료 티어)</option>
+        <option value="openai">OpenAI</option>
+        <option value="custom">직접 입력 (Ollama 등)</option>
+      </select>
+    </label>
+    <label class="field">
+      <span>API 키</span>
+      <input id="s-key" type="password" placeholder="브라우저에만 저장됩니다" autocomplete="off">
+    </label>
+    <label class="field">
+      <span>모델</span>
+      <input id="s-model" type="text" placeholder="gemini-2.0-flash">
+    </label>
+    <label class="field" id="s-url-field">
+      <span>엔드포인트</span>
+      <input id="s-url" type="text" placeholder="http://localhost:11434/v1/chat/completions">
+    </label>
+    <button id="s-test" class="wide ghost">연결 테스트</button>
+    <div id="s-test-out" class="hint"></div>
+    <p class="hint">키는 이 기기의 localStorage 에만 들어갑니다. 서버로 보내지 않습니다. 다만 브라우저에 저장되는 이상 완벽히 안전하진 않으니, 결제 한도를 건 전용 키를 쓰세요.</p>
+
+    <h3>데이터</h3>
+    <button id="s-export" class="wide ghost">진도 내보내기 (.json)</button>
+    <button id="s-import" class="wide ghost">진도 가져오기</button>
+    <input id="s-file" type="file" accept="application/json" hidden>
+    <button id="s-reset" class="wide danger">진도 전체 삭제</button>
+    <p class="hint" id="s-build"></p>
+  </section>
+</main>
+
+<div id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
