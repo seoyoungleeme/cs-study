@@ -88,7 +88,13 @@ button[disabled]{opacity:.45;cursor:default}
 /* 답변 */
 #answer{margin-top:18px;border-top:1px solid var(--line);padding-top:16px}
 #answer h3{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin:0 0 10px}
-#a-body{font-size:15.5px}
+#a-summary{margin:0;padding-left:20px;font-size:16px;line-height:1.7}
+#a-summary li{margin:7px 0}
+#a-summary code{background:var(--panel2);padding:1px 5px;border-radius:5px;font-size:13.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+#a-summary strong{font-weight:700}
+#btn-more{width:100%;margin-top:16px;font-size:14px;padding:11px;color:var(--dim)}
+#a-body{font-size:15.5px;margin-top:18px;padding-top:16px;border-top:1px dashed var(--line)}
 #a-body h4{font-size:15px;margin:16px 0 6px}
 #a-body p{margin:0 0 10px}
 #a-body ul{margin:0 0 10px;padding-left:19px}

@@ -228,6 +228,7 @@ function showCard(){
   $('#c-q').textContent = current.question;
   $('#c-input').value = '';
   $('#answer').classList.add('hidden');
+  $('#btn-more').classList.remove('hidden');
   $('#grade-box').classList.add('hidden');
   $('#grade-box').innerHTML = '';
   $('#btn-reveal').classList.remove('hidden');
@@ -255,6 +256,15 @@ async function reveal(){
 
   const a = await getAnswer(current);
   if (a){
+    // 요약이 있으면 불릿만 먼저 보여주고 상세는 버튼으로 펼친다
+    const bullets = Array.isArray(a.summary) ? a.summary : null;
+    $('#a-summary').innerHTML = bullets
+      ? bullets.map(b => `<li>${inline(esc(b))}</li>`).join('')
+      : '';
+    $('#a-summary').classList.toggle('hidden', !bullets);
+    $('#btn-more').classList.toggle('hidden', !bullets);
+    $('#a-body').classList.toggle('hidden', !!bullets);
+    $('#answer').querySelector('h3').textContent = bullets ? '핵심' : '모범답안';
     $('#a-body').innerHTML = md(a.answer);
     const docs = (a.docs || []).map(d =>
       `<a href="https://github.com/fru1tworld/cs-basic/blob/main/docs/${encodeURI(d)}" target="_blank" rel="noopener">${esc(d.split('/').pop().replace(/\.md$/,''))}</a>`
@@ -263,6 +273,10 @@ async function reveal(){
       (docs ? `근거 문서: ${docs}<br>` : '') +
       (a.source === 'model' ? '이 답변은 레포 docs 에 대응 문서가 없어 일반 지식으로 작성했습니다.' : '');
   } else {
+    $('#a-summary').innerHTML = '';
+    $('#a-summary').classList.add('hidden');
+    $('#btn-more').classList.add('hidden');
+    $('#a-body').classList.remove('hidden');
     $('#a-body').innerHTML = '<p>아직 이 문항의 모범답안이 준비되지 않았습니다. 직접 답해보고 평가만 남기세요.</p>';
     $('#a-src').innerHTML = '';
   }
@@ -504,6 +518,10 @@ function wire(){
   });
 
   $('#btn-reveal').addEventListener('click', reveal);
+  $('#btn-more').addEventListener('click', () => {
+    $('#a-body').classList.remove('hidden');
+    $('#btn-more').classList.add('hidden');
+  });
   $('#btn-grade').addEventListener('click', grade);
   $('#answer').addEventListener('click', e => {
     const b = e.target.closest('.rate'); if (b) rate(+b.dataset.g);
@@ -593,7 +611,11 @@ function wire(){
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); revealed ? null : reveal(); }
       return;
     }
-    if (e.key === ' '){ e.preventDefault(); revealed || reveal(); }
+    if (e.key === ' '){
+      e.preventDefault();
+      if (!revealed) reveal();
+      else if (!$('#btn-more').classList.contains('hidden')) $('#btn-more').click();
+    }
     if (revealed && ['1','2','3'].includes(e.key)) rate(+e.key - 1);
   });
 }
