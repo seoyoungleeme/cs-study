@@ -528,7 +528,7 @@ function renderStats(){
   $('#stat-top').innerHTML = `
     <div class="stat"><b>${cards.length}</b><span>시작 / ${QUESTIONS.length}</span></div>
     <div class="stat"><b>${mature}</b><span>장기기억 (21일+)</span></div>
-    <div class="stat"><b>${avg == null ? '—' : avg}</b><span>평균 채점</span></div>`;
+    <div class="stat"><b>${avg == null ? '-' : avg}</b><span>평균 채점</span></div>`;
 
   const heat = [];
   for (let i = 29; i >= 0; i--){
