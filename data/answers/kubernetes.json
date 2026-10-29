@@ -43,7 +43,7 @@
    "q": "kube-apiserver에 대한 설명으로 옳은 것은?",
    "options": [
     "stateless라서 수평 확장이 자유롭고, 로드밸런서 뒤에 여러 대를 두어 HA를 구성한다",
-    "클러스터 상태를 자체적으로 메모리에 저장하므로 etcd 없이도 단독으로 동작할 수 있다",
+    "클러스터 상태를 자체적으로 메모리에 캐시해 저장하므로 etcd에 장애가 나도 apiserver 혼자서 계속 정상 동작할 수 있다",
     "요청마다 상태를 유지해야 하므로 한 번에 하나의 인스턴스만 실행할 수 있다",
     "어드미션 웹훅은 보안상 위험해 쿠버네티스 코어에서 지원하지 않는 기능이다"
    ],
@@ -69,7 +69,7 @@
    "options": [
     "Raft 합의 알고리즘 기반이라 과반(quorum)이 살아 있어야 쓰기가 가능하므로 홀수 대수로 구성한다",
     "짝수 노드로 구성해야 과반 계산이 정확해지고 장애 허용 수가 늘어난다",
-    "클러스터의 설정 일부만 저장하며, Pod와 Secret 같은 리소스는 apiserver 메모리에 남는다",
+    "클러스터의 설정 일부만 저장하며, Pod와 Secret 같은 주요 리소스는 성능을 위해 apiserver 메모리에만 남겨 둔다",
     "디스크 지연에 큰 영향을 받지 않아 다른 워크로드와 디스크를 공유해도 무방하다"
    ],
    "why": "etcd는 Raft 기반이라 과반이 살아 있어야 쓰기가 가능해 홀수 노드로 구성하며, 디스크 지연에 극도로 민감하다"
@@ -93,7 +93,7 @@
    "q": "kube-scheduler의 동작 방식으로 옳은 것은?",
    "options": [
     "Filtering으로 배치 불가능한 노드를 제거한 뒤, 남은 노드에 Scoring으로 점수를 매겨 선택한다",
-    "Scoring으로 먼저 모든 노드의 점수를 매긴 뒤, 상위 노드만 Filtering으로 조건을 검사한다",
+    "Scoring으로 먼저 모든 노드의 점수를 매긴 뒤, 상위 몇 개 노드만 다시 Filtering으로 조건을 검사해 최종 후보를 정한다",
     "스케줄러가 직접 Pod를 노드에서 실행시키고, kubelet은 실행 결과만 보고한다",
     "노드가 배정된 Pod만 감시하며 재배치가 필요한지 주기적으로 확인한다"
    ],
@@ -172,7 +172,7 @@
     "Control Plane과 통신이 끊겨도 이미 떠 있는 컨테이너는 독립적으로 유지하지만 새 변경은 받지 못한다",
     "apiserver와 연결이 끊기면 즉시 노드의 모든 컨테이너를 종료시킨다",
     "CRI, CNI, CSI를 모두 직접 구현해 런타임·네트워크·볼륨을 처리한다",
-    "노드 상태 보고는 하지 않으며, 상태 판정은 전적으로 kube-scheduler가 담당한다"
+    "노드 상태 보고는 kubelet이 아니라 전적으로 kube-scheduler가 주기적으로 수집해 apiserver에 올리는 방식으로 이뤄진다"
    ],
    "why": "kubelet은 apiserver를 watch해 Pod를 실행하지만, 연결이 끊겨도 기존 컨테이너는 유지하고 Lease로 노드 상태를 보고한다"
   }
@@ -299,7 +299,7 @@
     "Phase는 요약값일 뿐이라 실제 진단은 containerStatuses와 conditions를 함께 봐야 한다",
     "Running Phase는 모든 컨테이너가 정상적으로 요청에 응답하고 있음을 보장한다",
     "CrashLoopBackOff 상태에 빠진 Pod의 Phase는 항상 Failed로 표시된다",
-    "Succeeded Phase는 Deployment로 관리되는 상시 서비스 Pod에서 흔히 나타난다"
+    "Succeeded Phase는 Deployment로 관리되는 상시 서비스 Pod에서도 정상적인 재시작 과정의 일부로 흔하게 나타난다"
    ],
    "why": "Phase는 고수준 요약이라 CrashLoopBackOff여도 Phase는 Running으로 보이므로 containerStatuses를 함께 확인해야 한다"
   }
@@ -324,7 +324,7 @@
     "Deployment, StatefulSet, DaemonSet은 restartPolicy로 Always만 허용한다",
     "OnFailure는 종료 코드와 무관하게 항상 컨테이너를 재시작한다",
     "restartPolicy는 Pod 안의 컨테이너마다 다르게 설정할 수 있다",
-    "Never로 설정하면 실패한 컨테이너만 재시작하고 성공한 컨테이너는 그대로 둔다"
+    "Never로 설정하면 실패한 컨테이너만 골라 자동으로 재시작하고, 이미 성공적으로 종료된 컨테이너는 그대로 둔 채 다음 단계로 넘어간다"
    ],
    "why": "restartPolicy는 Pod 단위 설정이며, Deployment 계열 컨트롤러는 상시 실행을 전제로 Always만 허용한다"
   }
@@ -347,7 +347,7 @@
    "q": "Pod가 Pending 상태에 머무는 원인 진단으로 옳은 것은?",
    "options": [
     "kubectl describe pod의 Events를 확인하면 스케줄링 탈락 사유를 노드 수와 함께 알 수 있다",
-    "Pending은 항상 이미지 pull 실패가 원인이므로 imagePullSecrets부터 확인하면 된다",
+    "Pending은 항상 이미지 pull 실패가 원인이므로 imagePullSecrets 설정부터 확인하면 대부분의 경우 바로 해결된다",
     "PVC가 Bound 상태가 아니어도 Pod는 Pending과 무관하게 바로 Running으로 전환된다",
     "배정 후 발생하는 Pending과 스케줄링 실패로 인한 Pending은 항상 같은 원인에서 비롯된다"
    ],
@@ -424,7 +424,7 @@
    "options": [
     "앱은 localhost만 바라보고, 실제 외부 엔드포인트 연결은 프록시 컨테이너가 대신 처리한다",
     "사이드카와 정반대로 외부에서 들어오는 트래픽을 애플리케이션 형식으로 변환하는 역할을 한다",
-    "환경마다 앱의 접속 설정을 다르게 바꿔야 하므로 설정 관리가 더 복잡해진다",
+    "환경마다 앱의 접속 설정을 다르게 바꿔야 하므로 설정 관리가 더 복잡해지고 프록시 컨테이너 설정도 매번 함께 수정해야 한다",
     "Ambassador 패턴은 사이드카와 전혀 무관한 독립적인 아키텍처 스타일이다"
    ],
    "why": "Ambassador는 사이드카의 특수형으로, 앱은 localhost만 바라보고 아웃바운드 연결의 복잡함은 프록시가 대신 처리한다"
@@ -449,7 +449,7 @@
    "options": [
     "애플리케이션의 고유한 출력 형식을 표준 형식으로 변환해 외부에 노출하는 보조 컨테이너 패턴이다",
     "외부로 나가는 아웃바운드 연결을 대신 처리한다는 점에서 Ambassador와 방향이 같다",
-    "레거시 애플리케이션을 반드시 코드 수준에서 수정해야만 적용할 수 있다",
+    "레거시 애플리케이션을 반드시 코드 수준에서 수정해야만 적용할 수 있어 소스 코드 접근 권한이 없으면 전혀 사용할 수 없다",
     "Prometheus 익스포터와 같은 역할은 Adapter 패턴에 해당하지 않는다"
    ],
    "why": "Adapter는 Ambassador와 반대 방향으로, 앱의 인바운드 출력을 표준 형식으로 바꿔 노출하며 Prometheus 익스포터가 대표 사례다"
@@ -498,7 +498,7 @@
    "q": "Init Container의 실행 순서와 실패 시 동작으로 옳은 것은?",
    "options": [
     "restartPolicy가 Never면 Init Container 실패 시 Pod 전체가 Failed가 된다",
-    "여러 Init Container가 있으면 모두 동시에 병렬로 실행되어 시간을 절약한다",
+    "여러 Init Container가 있으면 모두 동시에 병렬로 실행되어 전체 Pod 시작 시간을 크게 절약할 수 있다",
     "Init Container가 실패해도 뒤따르는 앱 컨테이너는 정상적으로 시작된다",
     "Init Container는 재시작되더라도 이전 실행 상태를 이어받아 재개된다"
    ],
@@ -598,8 +598,8 @@
    "q": "Deployment의 롤백과 revision history에 대한 설명으로 옳은 것은?",
    "options": [
     "revisionHistoryLimit을 0으로 두면 롤백에 필요한 구 ReplicaSet이 남지 않아 롤백이 불가능해진다",
-    "롤백을 하면 DB 스키마와 ConfigMap도 함께 이전 상태로 자동 복원된다",
-    "리비전 번호는 롤백할 때마다 이전에 쓰인 번호를 재사용한다",
+    "롤백을 하면 DB 스키마와 ConfigMap, Secret 값까지 모두 함께 이전 시점 상태로 자동으로 복원된다",
+    "리비전 번호는 롤백할 때마다 이전에 쓰인 번호를 그대로 재사용해서 번호가 줄어들기도 한다",
     "구 ReplicaSet은 롤백 직후 즉시 삭제되어 다음 롤백에 사용할 수 없다"
    ],
    "why": "롤백의 근거는 replicas 0으로 남아 있는 구 ReplicaSet이라 revisionHistoryLimit을 0으로 두면 롤백이 불가능하고, 롤백은 Pod 템플릿만 되돌린다"
@@ -623,7 +623,7 @@
    "q": "Blue-Green 배포와 Canary 배포에 대한 설명으로 옳은 것은?",
    "options": [
     "Blue-Green은 즉시 전환과 즉시 롤백이 가능하지만 자원을 두 배로 필요로 한다",
-    "Canary는 새 버전을 소수에만 노출하지 않고 처음부터 전체 트래픽을 전환한다",
+    "Canary는 새 버전을 소수에만 노출하지 않고 처음부터 전체 트래픽을 한꺼번에 새 버전으로 전환해버린다",
     "Blue-Green은 자원을 추가로 쓰지 않고 기존 환경 위에서 바로 전환된다",
     "정밀한 Canary 비율 조절은 replicas 숫자만으로도 충분히 세밀하게 가능하다"
    ],
@@ -648,7 +648,7 @@
    "q": "StatefulSet과 Deployment의 차이로 옳은 것은?",
    "options": [
     "StatefulSet은 volumeClaimTemplates로 Pod마다 전용 PVC를 만들어 재사용한다",
-    "Deployment도 StatefulSet처럼 Pod마다 고정된 이름과 전용 스토리지를 보장한다",
+    "Deployment도 StatefulSet처럼 Pod마다 고정된 이름과 전용 스토리지를 그대로 보장해 주는 기능을 기본으로 제공한다",
     "StatefulSet의 Pod들은 서로 교체 가능하다는 전제 아래 설계된 워크로드다",
     "StatefulSet은 생성과 삭제 모두 항상 동일한 순서로 동시에 처리된다"
    ],
@@ -698,7 +698,7 @@
    "q": "StatefulSet의 podManagementPolicy에 대한 설명으로 옳은 것은?",
    "options": [
     "기본값인 OrderedReady는 앞 Pod가 Running과 Ready가 되어야 다음 Pod를 생성한다",
-    "Parallel 정책은 Pod 이름과 볼륨의 보장을 포기하는 대신 속도를 얻는다",
+    "Parallel 정책은 Pod 이름과 전용 볼륨 보장을 포기하는 대신 생성 속도를 크게 끌어올려 주는 정책이다",
     "이 필드는 StatefulSet 생성 이후에도 언제든 자유롭게 변경할 수 있다",
     "OrderedReady는 삭제할 때도 생성 순서와 동일한 순서로 삭제한다"
    ],
@@ -774,7 +774,7 @@
    "q": "DaemonSet에 대한 설명으로 옳은 것은?",
    "options": [
     "노드가 추가되면 자동으로 Pod가 생성되고, 노드가 빠지면 정리되어 replicas 개념이 없다",
-    "DaemonSet은 지정한 replicas 수만큼 임의의 노드에 Pod를 분산 배치한다",
+    "DaemonSet은 사용자가 지정한 replicas 수만큼 임의의 노드를 골라 Pod를 분산 배치하는 방식으로 동작한다",
     "자원 소비는 Pod 수에 비례하므로 사이드카 방식보다 자원 효율이 떨어진다",
     "노드마다 여러 개의 Pod를 중복으로 배치해 가용성을 확보하는 워크로드다"
    ],
@@ -824,7 +824,7 @@
    "q": "Job의 completions와 parallelism 설정으로 옳은 것은?",
    "options": [
     "completions는 완료해야 할 총 Pod 수, parallelism은 동시에 실행할 Pod 수를 뜻한다",
-    "completions는 동시 실행 Pod 수, parallelism은 완료해야 할 총 Pod 수를 뜻한다",
+    "completions는 동시에 실행할 Pod 수를 뜻하고, parallelism은 전체적으로 완료해야 할 총 Pod 수를 뜻한다",
     "Job은 Deployment처럼 끝나지 않고 계속 실행되는 것이 정상 상태다",
     "completions를 생략하면 parallelism 값과 무관하게 항상 단일 작업으로 동작한다"
    ],
@@ -975,7 +975,7 @@
    "q": "LoadBalancer 타입 Service의 프로비저닝 과정으로 옳은 것은?",
    "options": [
     "cloud-controller-manager가 Service를 감지해 클라우드 API를 호출해 LB를 생성한다",
-    "쿠버네티스 내부 컴포넌트만으로 클라우드 LB 생성까지 전부 처리된다",
+    "쿠버네티스 내부 컴포넌트만으로 클라우드 로드밸런서 생성까지 전부 자체적으로 처리되어 외부 API 호출이 필요 없다",
     "Service마다 LB가 공유되어 여러 Service가 하나의 LB 비용만 부담한다",
     "내부적으로 NodePort를 생성하지 않고 Pod IP를 LB 타깃으로 직접 등록한다"
    ],
@@ -1001,7 +1001,7 @@
    "options": [
     "셀렉터도 엔드포인트도 ClusterIP도 없이 CNAME 응답만 반환하는 특수 타입이다",
     "ExternalName은 트래픽을 직접 프록시해 외부 서비스로 전달하는 방식이다",
-    "ExternalName Service는 포트 변환까지 지원해 다양한 프로토콜에 대응한다",
+    "ExternalName Service 는 포트 변환까지 지원해서 다양한 프로토콜 조합에 유연하게 대응할 수 있는 타입이다",
     "다른 Service 타입처럼 셀렉터로 Pod를 선택해 로드밸런싱을 수행한다"
    ],
    "why": "ExternalName은 프록시가 아니라 CoreDNS가 CNAME 레코드만 반환하는 타입이라 포트 변환이 되지 않는다"
@@ -1026,8 +1026,8 @@
    "options": [
     "clusterIP: None으로 설정해 가상 IP 없이 Pod IP를 DNS로 직접 반환한다",
     "일반 Service처럼 Pod를 숨기고 그 뒤에서 로드밸런싱을 수행한다",
-    "StatefulSet과 함께 쓰이지 않으며 주로 stateless 워크로드에만 사용된다",
-    "서비스 이름을 조회하면 항상 하나의 대표 Pod IP만 반환한다"
+    "Headless Service는 StatefulSet과 함께 쓰이지 않고 stateless 워크로드에만 제한적으로 쓰인다",
+    "서비스 이름을 DNS로 조회하면 항상 대표 Pod IP 하나만 반환되어 나머지는 숨겨진다"
    ],
    "why": "Headless Service는 가상 IP 없이 Pod IP를 그대로 DNS로 드러내며, StatefulSet의 Pod별 식별을 위해 함께 쓰인다"
   }
@@ -1051,7 +1051,7 @@
    "q": "PV의 Reclaim Policy에 대한 설명으로 옳은 것은?",
    "options": [
     "Retain은 PVC 삭제 후에도 데이터를 보존하고 재사용은 수동으로 처리한다",
-    "Delete는 PV만 지우고 실제 클라우드 디스크는 그대로 남겨둔다",
+    "Delete 정책은 PV 객체만 지우고 실제 클라우드 디스크는 삭제하지 않고 그대로 남겨 둔다",
     "Recycle은 현재도 동적 프로비저닝에서 널리 쓰이는 표준 정책이다",
     "Released 상태의 PV는 자동으로 새 PVC에 재바인딩된다"
    ],
@@ -1129,7 +1129,7 @@
    "q": "emptyDir, hostPath, configMap, secret 볼륨에 대한 설명으로 옳은 것은?",
    "options": [
     "emptyDir은 Pod와 수명을 같이 하는 빈 디렉터리로 Pod가 사라지면 데이터도 사라진다",
-    "hostPath는 보안 위험이 없어 일반 애플리케이션에도 자유롭게 사용해도 무방하다",
+    "hostPath는 특별한 보안 위험이 없어서 일반 애플리케이션에서도 자유롭게 사용해도 무방한 볼륨이다",
     "secret 볼륨은 configMap처럼 노드 디스크에 그대로 저장되어 남는다",
     "이 네 가지 볼륨은 모두 영속 스토리지로 분류되어 PVC를 대체할 수 있다"
    ],
@@ -1207,7 +1207,7 @@
    "q": "Secret의 보안성에 대한 설명으로 옳은 것은?",
    "options": [
     "기본 설정에서는 etcd에 평문으로 저장되므로 base64는 암호화가 아니라 인코딩일 뿐이다",
-    "Secret 값은 기본적으로 etcd에 저장될 때 자동으로 암호화되어 안전하다",
+    "Secret 값은 기본 설정에서도 etcd에 저장될 때 자동으로 암호화 처리되어 안전하게 보관된다",
     "base64 인코딩은 암호화와 동일한 수준의 보안을 제공한다",
     "Secret을 볼륨으로 마운트하면 노드 디스크에 영구적으로 기록된다"
    ],
@@ -1259,7 +1259,7 @@
    "q": "Role/ClusterRole, RoleBinding/ClusterRoleBinding 의 차이로 옳은 것은?",
    "options": [
     "RoleBinding 은 ClusterRole 을 참조해 권한 정의는 공유하면서 효력만 네임스페이스로 한정할 수 있다",
-    "ClusterRoleBinding 도 Role 을 참조해 특정 네임스페이스에만 권한을 줄 수 있다",
+    "ClusterRoleBinding 도 Role 을 참조할 수 있어서 특정 네임스페이스에만 한정된 권한을 부여할 수 있다",
     "노드나 PV 같은 클러스터 범위 리소스는 일반 Role 로도 자유롭게 권한을 줄 수 있다",
     "같은 권한을 여러 네임스페이스에 주려면 매번 별도의 ClusterRole 을 새로 만들어야 한다"
    ],
@@ -1389,7 +1389,7 @@
    "q": "Kubernetes API 서버의 인증 방식에 대한 설명으로 옳은 것은?",
    "options": [
     "API 서버는 여러 인증 방식을 순서대로 시도하다가 하나라도 성공하면 그 신원으로 진행한다",
-    "쿠버네티스는 인증에 성공한 사용자마다 User 객체를 생성해 영구적으로 관리한다",
+    "쿠버네티스는 인증에 성공한 사용자마다 User 라는 객체를 생성해서 영구적으로 관리하고 조회할 수 있게 한다",
     "X.509 클라이언트 인증서는 폐기가 쉬워 운영 환경의 표준 인증 수단으로 권장된다",
     "OIDC 는 사람 사용자가 아니라 ServiceAccount 전용으로 설계된 인증 방식이다"
    ],
@@ -1493,7 +1493,7 @@
    "q": "Pod Security Standards 의 세 단계에 대한 설명으로 옳은 것은?",
    "options": [
     "Restricted 수준은 비root 실행과 모든 capability drop, seccomp 적용까지 요구해 애플리케이션 수정이 필요할 수 있다",
-    "Baseline 수준은 Restricted 보다 더 강화된 모범 사례까지 전부 요구한다",
+    "Baseline 수준은 Restricted 보다 더 강화된 모범 사례까지 전부 요구해서 사실상 두 단계를 모두 포함하는 가장 엄격한 상위 호환 수준으로 동작한다",
     "Privileged 수준은 알려진 권한 상승 경로만 차단하고 나머지는 자유롭다",
     "Pod Security Standards 는 PodSecurityPolicy 와 함께 1.25 이후에도 계속 공존한다"
    ],
@@ -1520,7 +1520,7 @@
    "options": [
     "enforce 는 이미 실행 중인 Pod 에는 적용되지 않고 Pod 생성 시점에만 위반 여부를 평가한다",
     "enforce, audit, warn 세 모드는 반드시 동일한 수준으로만 설정할 수 있다",
-    "audit 모드는 위반 시 Pod 생성을 즉시 거부하고 로그도 함께 남긴다",
+    "audit 모드는 위반 시 Pod 생성을 즉시 거부하고 그 사실을 감사 로그에도 함께 자세히 기록해 둔다",
     "warn 모드는 사용자에게 아무 메시지도 보여주지 않고 조용히 로그에만 기록한다"
    ],
    "why": "enforce는 Pod 생성 시점에만 평가해 이미 떠 있는 Pod는 영향을 받지 않고, audit은 거부 없이 로그만, warn은 거부 없이 kubectl 경고만 보여주며 세 모드는 서로 다른 수준으로 설정할 수 있다."
@@ -1571,7 +1571,7 @@
    "q": "ConfigMap/Secret 변경이 Pod에 자동 반영되지 않는 이유로 옳은 것은?",
    "options": [
     "환경변수로 주입했다면 프로세스 시작 시 고정되므로 구조적으로 재반영이 불가능하다",
-    "볼륨 마운트는 subPath로 해도 변경 사항이 즉시 자동으로 반영된다",
+    "볼륨 마운트는 subPath 로 해도 변경 사항이 심볼릭 링크 갱신을 통해 즉시 자동으로 반영된다",
     "ConfigMap 이름에 해시를 붙이는 방식은 오히려 자동 롤아웃을 방해한다",
     "앱이 파일을 다시 읽지 않아도 볼륨 내용은 즉시 프로세스 메모리에 반영된다"
    ],
@@ -1623,7 +1623,7 @@
    "q": "Node Affinity의 requiredDuringSchedulingIgnoredDuringExecution과 preferredDuringSchedulingIgnoredDuringExecution의 차이로 옳은 것은?",
    "options": [
     "required는 조건을 만족하는 노드가 없으면 스케줄되지 않고 Pending으로 남는다",
-    "preferred는 조건을 만족하지 못하면 required처럼 Pending 상태가 된다",
+    "preferred는 조건을 만족하지 못해도 required처럼 Pending 상태가 되어 스케줄링 자체가 중단돼 버린다",
     "required는 weight 값으로 우선순위만 조정하고 강제성은 없다",
     "두 조건 모두 이미 실행 중인 Pod를 즉시 재배치하도록 강제한다"
    ],
@@ -1755,7 +1755,7 @@
     "etcd가 디스크 지연에 민감해 사용자 워크로드의 I/O 경합이 클러스터를 불안정하게 만들 수 있다",
     "컨트롤 플레인 노드는 물리적으로 사용자 Pod를 실행할 수 없는 하드웨어를 쓴다",
     "관리형 쿠버네티스에서도 사용자가 이 taint를 직접 관리하고 조정해야 한다",
-    "toleration을 추가하는 것은 운영 클러스터에서도 일반적으로 권장되는 구성이다"
+    "toleration을 추가하는 것은 운영 클러스터에서도 일반적으로 권장되는 구성이며 안정성에 큰 영향을 주지 않는다"
    ],
    "why": "컨트롤 플레인에는 기본적으로 NoSchedule taint가 걸려 있고, etcd가 디스크 지연에 민감해 워크로드 혼재가 클러스터를 불안정하게 만들 수 있다"
   }
@@ -1779,7 +1779,7 @@
    "q": "노드 장애 시 자동으로 적용되는 Taint에 대한 설명으로 옳은 것은?",
    "options": [
     "not-ready와 unreachable은 NoExecute이며 기본적으로 300초의 유예 시간이 붙는다",
-    "memory-pressure 같은 자원 압박 taint는 NoExecute로 즉시 모든 Pod를 축출한다",
+    "memory-pressure 같은 자원 압박 taint도 NoExecute로 분류되어 즉시 모든 Pod를 강제로 축출해버린다",
     "cordon을 실행하면 NoExecute taint가 붙어 기존 Pod가 즉시 쫓겨난다",
     "not-ready와 unreachable 상태에서는 유예 시간 없이 즉시 모든 Pod가 축출된다"
    ],
@@ -1806,7 +1806,7 @@
    "options": [
     "스케줄러는 limits를 보지 않고 requests 합으로만 노드 배치 가능 여부를 계산한다",
     "스케줄러는 limits 값을 기준으로 노드의 배치 가능 여부를 판단한다",
-    "requests 합은 노드 용량을 넘을 수 있지만 limits 합은 절대 넘을 수 없다",
+    "requests 합은 노드 용량을 넘을 수 있지만 limits 합은 스케줄러가 항상 강제로 제한해 절대 넘을 수 없다",
     "requests와 limits가 같으면 QoS 클래스는 항상 BestEffort가 된다"
    ],
    "why": "스케줄러는 requests 합만으로 노드를 고르고 limits는 보지 않아 limits 합은 오버커밋될 수 있으며, requests와 limits가 같으면 Guaranteed가 된다"
@@ -1858,7 +1858,7 @@
    "options": [
     "limits만 설정하면 쿠버네티스가 requests를 limits와 같은 값으로 자동 설정한다",
     "requests만 설정하면 QoS 클래스가 자동으로 Guaranteed가 된다",
-    "둘 다 설정하지 않으면 QoS는 Burstable로 분류되어 중간 수준으로 보호된다",
+    "둘 다 설정하지 않으면 QoS는 Burstable로 분류되어 축출 우선순위에서도 중간 수준으로 보호받는다",
     "limits만 설정해도 스케줄링 기준값은 변하지 않고 그대로 0으로 계산된다"
    ],
    "why": "limits만 설정하면 requests가 limits와 같은 값으로 자동 지정돼 Guaranteed가 되며, 둘 다 없으면 BestEffort로 가장 먼저 축출된다"
@@ -1883,7 +1883,7 @@
    "q": "Memory limits 초과와 CPU limits 초과의 동작 차이로 옳은 것은?",
    "options": [
     "메모리 초과는 OOMKilled로 즉시 종료되지만 CPU 초과는 스로틀링으로 느려지기만 한다",
-    "CPU 초과도 메모리처럼 OOM Killer에 의해 프로세스가 즉시 종료된다",
+    "CPU 초과도 메모리와 마찬가지로 OOM Killer가 개입해 해당 프로세스를 즉시 강제 종료시킨다",
     "메모리 초과는 조용히 스로틀링되어 로그나 이벤트로 드러나지 않는다",
     "두 경우 모두 동일하게 exitCode 137로 표시되어 구분할 수 없다"
    ],
@@ -2065,7 +2065,7 @@
    "q": "HPA 의 stabilizationWindowSeconds 설정에 대한 설명으로 옳은 것은?",
    "options": [
     "스케일 다운 기본 안정화 창은 300초로, 그 기간 권장값 중 가장 큰 값을 채택해 성급한 축소를 막는다",
-    "스케일 업도 스케일 다운과 동일하게 기본 300초의 안정화 창을 거친다",
+    "스케일 업도 스케일 다운과 동일하게 기본 300초의 안정화 창을 거친 뒤에야 비로소 복제본 수가 실제로 늘어나기 시작한다",
     "Ready 가 아니거나 지표가 없는 Pod 도 평균 계산에 그대로 포함된다",
     "안정화 창 동안에는 가장 작은 권장값을 선택해 보수적으로 축소한다"
    ],
@@ -2092,7 +2092,7 @@
    "options": [
     "requests 를 실측에 맞추는 것이 1순위인 이유는 HPA 의 사용률 계산 기준이 requests 이기 때문이다",
     "JVM 처럼 힙을 쥐고 있는 런타임은 메모리 기반 스케일링에 특히 적합하다",
-    "minReplicas 를 1로 두는 것이 롤아웃과 축출 상황에서도 가용성을 가장 안전하게 지킨다",
+    "minReplicas 를 1로 두는 것이 롤아웃과 축출 상황에서도 가용성을 가장 안전하게 지켜주는 업계 표준 권장 설정이다",
     "HPA 만 설정하면 Cluster Autoscaler 없이도 노드 부족 상황이 자동으로 해결된다"
    ],
    "why": "HPA 는 requests 대비 사용률로 계산하므로 requests 를 실측에 맞춰야 하고, 메모리 기반 스케일링은 힙을 쥐는 런타임에서 스케일 다운이 안 돼 피해야 하며, minReplicas 는 2 이상, Cluster Autoscaler 와 함께 써야 완성된다."
@@ -2119,7 +2119,7 @@
     "VPA 는 Pod 의 requests, limits 값 자체를 자동 조정하며 값을 바꾸려면 Pod 를 재생성해야 한다",
     "VPA 는 HPA 와 동일하게 Pod 개수를 늘리거나 줄이는 방식으로 동작한다",
     "같은 지표로 HPA 와 VPA 를 동시에 걸어도 서로 안정적으로 보완하며 동작한다",
-    "VPA 는 Pod 재생성 없이도 실행 중인 컨테이너의 리소스 값을 즉시 바꿀 수 있다"
+    "VPA 는 Pod 재생성 과정 없이도 실행 중인 컨테이너의 리소스 값을 그 자리에서 즉시 바꿀 수 있는 기능을 가지고 있다"
    ],
    "why": "VPA 는 수직으로 requests/limits 크기를 바꾸는 컨트롤러라 적용 시 Pod 재생성이 필요하고, 같은 지표로 HPA 와 동시에 쓰면 서로 반대로 작용해 발산한다."
   }
@@ -2145,7 +2145,7 @@
     "Initial 은 새로 생성되는 Pod 에만 권장값을 주입하고 기존 Pod 는 축출하지 않는다",
     "Off 모드는 권장값 계산과 동시에 기존 Pod 에도 값을 즉시 적용한다",
     "Auto 모드는 재시작 없이 실행 중인 컨테이너의 값을 그 자리에서 바꾼다",
-    "실무에서는 Auto 로 먼저 적용한 뒤 안정화되면 Off 로 전환하는 순서를 권장한다"
+    "실무에서는 Auto 모드를 먼저 적용해 운영하다가 안정화되면 Off 로 전환하는 순서가 가장 권장되는 방식이다"
    ],
    "why": "Off 는 권장값만 계산하고 Pod 를 건드리지 않으며, Initial 은 신규 Pod 에만 값을 주입하고, Auto 는 축출과 재생성을 동반하므로 Off 에서 관찰한 뒤 Initial, 검증 후 Auto 순으로 도입하는 것이 권장된다."
   }
@@ -2171,7 +2171,7 @@
     "노드 추가는 실제 사용률이 아니라 Pending Pod 가 생겼을 때 시뮬레이션을 거쳐 트리거된다",
     "노드 삭제는 로컬 스토리지를 쓰는 Pod 가 있어도 상관없이 바로 진행된다",
     "노드 그룹 안에 서로 다른 사양의 노드를 섞어도 동작에 전혀 영향이 없다",
-    "Karpenter 는 Cluster Autoscaler 와 동일하게 노드 그룹 단위로만 동작한다"
+    "Karpenter 는 Cluster Autoscaler 와 마찬가지로 사전에 정의된 노드 그룹 단위로만 인스턴스를 고를 수 있다"
    ],
    "why": "Cluster Autoscaler 는 Pending Pod 를 기준으로 노드를 추가하고 로컬 스토리지나 PDB 위반이 있으면 삭제를 미루며, 노드 그룹은 동일 사양을 전제하는 반면 Karpenter 는 그룹 없이 직접 인스턴스를 고른다."
   }
@@ -2221,7 +2221,7 @@
    "q": "RBAC 구성 요소에 대한 설명으로 옳은 것은?",
    "options": [
     "RoleBinding 은 효력이 해당 네임스페이스 안에서만 미치고 ClusterRoleBinding 은 클러스터 전체에 미친다",
-    "ClusterRole 은 네임스페이스 범위로만 제한되고 클러스터 범위 리소스에는 쓸 수 없다",
+    "ClusterRole 은 네임스페이스 범위 리소스에만 제한되는 객체라서 노드나 PV 같은 클러스터 범위 리소스에는 전혀 사용할 수 없다",
     "RBAC 에는 명시적인 거부 규칙이 있어 허용 규칙과 충돌하면 거부가 우선한다",
     "User 와 Group 주체는 쿠버네티스가 직접 생성하고 관리하는 객체다"
    ],
@@ -2322,7 +2322,7 @@
     "cert-manager는 Let's Encrypt 인증서를 자동으로 발급하고 갱신해 수동 작업을 없앤다",
     "TLS 인증서는 ConfigMap에 평문으로 저장해 Ingress에서 직접 참조한다",
     "DNS-01 검증은 와일드카드 인증서를 발급할 수 없다는 한계가 있다",
-    "cert-manager 없이도 Ingress는 인증서 갱신 주기를 자동으로 추적해 준다"
+    "cert-manager 가 없어도 Ingress 컨트롤러 자체가 인증서 갱신 주기를 자동으로 추적해서 처리해 준다"
    ],
    "why": "cert-manager는 Issuer와 Certificate 리소스로 Let's Encrypt 인증서를 자동 발급·갱신하며, DNS-01은 오히려 와일드카드를 지원한다"
   }
@@ -2372,7 +2372,7 @@
     "컨트롤러가 조건에 맞는 PV를 찾아 PVC와 1대1로 바인딩하며 한 번 묶이면 배타적이다",
     "하나의 PVC는 동시에 여러 PV와 자유롭게 바인딩될 수 있다",
     "Pod는 PV 이름을 직접 지정해야만 스토리지를 사용할 수 있다",
-    "앱 개발자는 PVC를 쓰기 위해 실제 스토리지 종류를 반드시 알아야 한다"
+    "앱 개발자는 PVC 를 쓰기 위해 뒤에 연결될 실제 스토리지 종류와 세부 설정을 반드시 알아야만 한다"
    ],
    "why": "PVC는 사용자의 스토리지 요청서이고 PV는 실제 자원이며, 컨트롤러가 조건에 맞는 PV를 찾아 1대1로 바인딩한다"
   }
@@ -2395,7 +2395,7 @@
    "q": "PV의 접근 모드에 대한 설명으로 옳은 것은?",
    "options": [
     "ReadWriteOnce는 하나의 Pod가 아니라 하나의 노드를 기준으로 읽기 쓰기를 허용한다",
-    "ReadWriteMany는 블록 스토리지인 EBS와 GCE PD에서도 기본으로 지원된다",
+    "ReadWriteMany 는 블록 스토리지인 EBS 와 GCE PD 에서도 기본적으로 지원되는 접근 모드다",
     "ReadOnlyMany는 여러 노드에서 동시에 읽기와 쓰기를 모두 허용한다",
     "accessMode만 RWX로 지정하면 어떤 스토리지든 다중 노드 쓰기가 가능해진다"
    ],
@@ -2447,7 +2447,7 @@
     "liveness probe 에서 외부 의존성을 검사하면 그 의존성 장애 시 모든 Pod 가 동시에 재시작되어 장애가 증폭될 수 있다",
     "liveness probe 는 실패해도 컨테이너를 재시작하지 않고 트래픽만 차단한다",
     "httpGet 방식은 응답 코드와 무관하게 연결만 되면 항상 성공으로 처리한다",
-    "기동이 느린 애플리케이션은 initialDelaySeconds 값만 충분히 늘리면 완전히 해결된다"
+    "기동이 느린 애플리케이션 문제는 liveness probe 의 initialDelaySeconds 값만 충분히 크게 늘려 주면 다른 조치 없이도 완전히 해결된다"
    ],
    "why": "liveness probe가 외부 의존성을 검사하면 그 의존성 장애가 전체 Pod 동시 재시작으로 번질 수 있고, httpGet은 2xx/3xx 응답이어야 성공이며 기동이 느린 앱은 startupProbe를 함께 써야 한다."
   }
@@ -2496,7 +2496,7 @@
    "options": [
     "성공하면 그 이후로는 다시 실행되지 않고 liveness, readiness가 담당을 넘겨받는다",
     "initialDelaySeconds와 동일하게 고정된 시간만 대기한 뒤 무조건 통과시킨다",
-    "startupProbe가 있으면 liveness와 readiness가 완전히 비활성화된다",
+    "startupProbe 가 설정되어 있으면 liveness 와 readiness probe 는 완전히 비활성화되어 더 이상 동작하지 않는다",
     "최대 허용 시간은 periodSeconds 값과 무관하게 항상 고정되어 있다"
    ],
    "why": "startupProbe는 성공 후 다시 실행되지 않고 이후는 liveness, readiness가 담당하며, 초기 지연과 달리 준비되는 즉시 넘어가고 허용 시간은 failureThreshold와 periodSeconds의 곱으로 정해진다."
@@ -2547,7 +2547,7 @@
     "timeoutSeconds 기본값 1초가 원인이 되어 멀쩡한 Pod가 재시작되는 경우가 흔하다",
     "readiness probe가 모두 실패해도 서비스 가용성에는 영향이 전혀 없다",
     "liveness에 외부 의존성을 넣으면 장애 범위가 오히려 한 Pod로만 한정된다",
-    "배포 중 readiness가 없어도 RollingUpdate는 항상 안전하게 제어된다"
+    "배포 도중 readiness probe 가 없어도 RollingUpdate 는 항상 안전하게 트래픽을 제어해서 넘어간다"
    ],
    "why": "timeoutSeconds 기본값 1초가 CrashLoopBackOff의 흔한 원인이며, readiness 전체 실패는 503으로 이어지고 liveness의 외부 의존성 검사는 장애를 전체로 증폭시키며 readiness 없이는 배포 제어가 안 된다."
   }
@@ -2570,7 +2570,7 @@
    "q": "kubectl logs 명령어의 옵션에 대한 설명으로 옳은 것은?",
    "options": [
     "--previous는 직전에 죽은 컨테이너의 로그를 보여줘 CrashLoopBackOff 조사에 쓰인다",
-    "멀티 컨테이너 Pod에서 -c 옵션 없이 실행하면 항상 에러 없이 전체 컨테이너 로그가 합쳐져 보인다",
+    "멀티 컨테이너 Pod 에서 -c 옵션 없이 실행해도 항상 에러 없이 전체 컨테이너의 로그가 합쳐져서 보인다",
     "kubectl logs는 노드가 아니라 중앙 로그 저장소에서 직접 데이터를 조회한다",
     "-f 옵션은 과거 로그만 보여주고 실시간 스트리밍은 지원하지 않는다"
    ],
@@ -2646,7 +2646,7 @@
    "q": "Prometheus를 활용한 Kubernetes 모니터링에 대한 설명으로 옳은 것은?",
    "options": [
     "kubernetes_sd_config로 Pod, Service, Endpoints 같은 대상을 자동으로 탐지한다",
-    "Prometheus는 타겟이 데이터를 직접 밀어 넣는 push 방식으로만 동작한다",
+    "Prometheus 는 모니터링 대상이 직접 데이터를 서버로 밀어 넣는 push 방식만으로 동작하도록 설계되어 있다고 알려져 있다",
     "kube-state-metrics는 노드의 하드웨어 상태만 전문적으로 수집한다",
     "ServiceMonitor CRD 없이는 Prometheus Operator를 전혀 쓸 수 없다"
    ],
@@ -2696,7 +2696,7 @@
    "q": "Helm의 Chart, Release, Repository 개념에 대한 설명으로 옳은 것은?",
    "options": [
     "같은 Chart를 여러 값으로 설치하면 서로 다른 Release로 중복 설치할 수 있다",
-    "Release는 Chart 자체를 가리키고 Chart는 설치된 인스턴스를 가리킨다",
+    "Release는 설치하기 전의 Chart 템플릿 자체를 가리키고 Chart는 실제로 클러스터에 설치된 인스턴스를 가리킨다",
     "Repository는 클러스터 안에 존재하는 실행 중인 Release들의 목록이다",
     "Helm은 YAML 여러 개를 자동으로 합치지 못해 수작업 병합이 필요하다"
    ],
@@ -2721,7 +2721,7 @@
    "q": "Helm Chart의 구조에 대한 설명으로 옳은 것은?",
    "options": [
     "values.yaml은 템플릿에 주입되는 기본값이며 사용자가 오버라이드하는 대상이다",
-    "Chart.yaml에는 실제 쿠버네티스 매니페스트 템플릿이 들어 있다",
+    "Chart.yaml 안에는 실제로 배포될 쿠버네티스 매니페스트 템플릿 코드가 전부 들어 있다",
     "templates 디렉터리에는 Chart의 이름과 버전 같은 메타데이터만 들어 있다",
     "charts 디렉터리는 사용하지 않는 레거시 파일을 보관하는 용도다"
    ],
@@ -2773,7 +2773,7 @@
     "rollback은 과거로 돌아가는 것이 아니라 그 시점 값으로 되돌리는 새 Revision을 만든다",
     "upgrade를 실행할 때마다 Revision 번호가 1로 초기화된다",
     "uninstall은 기본적으로 히스토리를 자동 보존하고 삭제하지 않는다",
-    "upgrade --install은 Release가 이미 있으면 반드시 실패하도록 설계되었다"
+    "upgrade --install 명령은 같은 이름의 Release가 이미 존재하면 충돌로 간주해 반드시 실패하도록 설계되었다"
    ],
    "why": "rollback은 과거 시점 값으로 되돌리는 새 Revision을 생성하며, upgrade마다 Revision이 증가하고 uninstall은 기본적으로 히스토리도 삭제하며 upgrade --install은 없으면 설치, 있으면 업그레이드하는 멱등 패턴이다."
   }
@@ -2871,7 +2871,7 @@
    "q": "etcd 백업과 복구에 대한 설명으로 옳은 것은?",
    "options": [
     "복구 후에는 모든 Control Plane의 etcd 멤버가 재구성되어 클러스터 전체에 영향을 준다",
-    "etcd는 쿠버네티스 상태의 일부만 담고 있어 유실돼도 복구가 비교적 간단하다",
+    "etcd는 쿠버네티스 상태 중 일부분만 담고 있는 보조 저장소라서 유실되어도 복구 과정이 비교적 간단한 편이다",
     "백업은 클러스터 외부가 아니라 반드시 etcd 노드 내부에 보관해야 한다",
     "etcdctl snapshot save는 TLS 인증서 지정 없이도 항상 동작한다"
    ],
@@ -2896,7 +2896,7 @@
    "q": "kubectl drain과 cordon의 차이에 대한 설명으로 옳은 것은?",
    "options": [
     "drain은 cordon에 더해 기존 Pod를 Eviction API로 다른 노드로 축출한다",
-    "cordon은 기존 Pod까지 다른 노드로 옮기고 새 스케줄링도 막는다",
+    "cordon 명령만 실행해도 기존에 떠 있던 Pod까지 자동으로 다른 노드로 옮겨지고 새 스케줄링도 함께 막힌다",
     "drain은 PodDisruptionBudget을 무시하고 즉시 강제로 Pod를 삭제한다",
     "작업이 끝난 뒤 uncordon을 생략해도 노드는 자동으로 스케줄링 대상에 복귀한다"
    ],
@@ -2947,7 +2947,7 @@
    "options": [
     "CrashLoopBackOff는 상태가 아니라 재시작 간격을 지수적으로 늘리는 백오프 정책이다",
     "원인은 항상 liveness probe 실패 한 가지로만 좁혀진다",
-    "logs --previous보다 describe의 이벤트가 항상 더 근본적인 원인을 알려준다",
+    "logs --previous 로 보는 과거 로그보다 describe 명령의 이벤트 기록이 언제나 더 근본적인 원인을 알려준다고 볼 수 있다",
     "메인 프로세스가 즉시 종료되는 경우는 CrashLoopBackOff의 원인이 될 수 없다"
    ],
    "why": "CrashLoopBackOff는 kubelet의 백오프 정책이며, 원인은 애플리케이션 오류, liveness 실패, 프로세스 즉시 종료 등 다양하고 진단은 describe와 logs --previous를 함께 봐야 한다."
@@ -2971,7 +2971,7 @@
    "q": "Pod가 ImagePullBackOff 상태일 때의 원인에 대한 설명으로 옳은 것은?",
    "options": [
     "private 레지스트리 인증 누락은 imagePullSecrets로 해결할 수 있는 흔한 원인이다",
-    "ErrImagePull과 ImagePullBackOff는 서로 완전히 무관한 별개의 문제다",
+    "ErrImagePull 과 ImagePullBackOff 는 발생 원인이나 해결 방법이 전혀 겹치지 않는 서로 무관한 별개의 문제다",
     "이미지 태그 오타는 이 상태를 유발하지 않고 항상 즉시 실패로 끝난다",
     "describe pod의 Events 없이도 정확한 에러 메시지를 바로 알 수 있다"
    ],
@@ -3046,7 +3046,7 @@
    "q": "Service에 연결되지 않는 Pod 문제의 진단 순서로 옳은 것은?",
    "options": [
     "selector와 label 일치를 먼저 확인하고 Endpoints 등록 여부를 그다음 확인한다",
-    "targetPort 불일치는 Endpoints가 비어 있을 때만 발생할 수 있는 문제다",
+    "targetPort 설정이 실제 컨테이너 포트와 다르면 Endpoints 자체가 비어 있는 경우에만 한정되어 발생하는 문제다",
     "readiness probe 결과는 Endpoints 등록 여부와 아무런 관련이 없다",
     "NetworkPolicy 차단 여부는 가장 먼저 확인해야 하는 1순위 항목이다"
    ],
@@ -3096,7 +3096,7 @@
    "q": "서비스 메시가 쿠버네티스 기본 Service보다 추가로 제공하는 기능으로 옳은 것은?",
    "options": [
     "재시도, 서킷브레이커 같은 L7 수준의 트래픽 제어를 사이드카 프록시로 처리한다",
-    "kube-proxy를 대체해 L4 로드밸런싱 성능을 더 빠르게 만든다",
+    "서비스 메시는 kube-proxy 를 완전히 대체해서 L4 로드밸런싱 성능 자체를 더 빠르게 만들어 주는 기술이다",
     "Pod의 IP 할당과 스케줄링을 담당해 노드 리소스를 절약한다",
     "etcd의 저장 공간을 줄여 클러스터 확장성을 높인다"
    ],
@@ -3121,7 +3121,7 @@
    "q": "서비스 메시의 사이드카 프록시가 트래픽을 가로채는 방식으로 옳은 것은?",
    "options": [
     "iptables 규칙(또는 eBPF)으로 애플리케이션이 인지하지 못하게 트래픽을 투명하게 가로챈다",
-    "애플리케이션 코드에 전용 SDK를 임베드해 모든 호출을 명시적으로 프록시로 전달한다",
+    "애플리케이션 코드 안에 전용 SDK 를 직접 임베드해서 모든 네트워크 호출을 명시적으로 프록시에 전달하는 방식이다",
     "쿠버네티스 API 서버가 요청마다 라우팅 테이블을 갱신해 전달한다",
     "DNS 서버가 서비스 이름을 프록시 주소로 바꿔 응답한다"
    ],
@@ -3247,7 +3247,7 @@
     "새 리소스의 스키마만 정의할 뿐이며 실제 동작은 별도의 Controller가 구현해야 한다",
     "등록하는 즉시 해당 리소스에 대한 동작 로직까지 자동으로 생성된다",
     "CRD는 etcd에 저장되지 않고 API 서버 메모리에서만 유지된다",
-    "CRD로 만든 리소스는 kubectl이나 RBAC을 적용할 수 없는 별도 체계로 동작한다"
+    "CRD 로 만든 커스텀 리소스는 kubectl 명령이나 RBAC 권한 체계를 전혀 적용할 수 없는 별도의 독립적인 체계로 동작한다"
    ],
    "why": "CRD는 리소스의 스키마만 정의하고, Controller가 없으면 생성된 오브젝트는 etcd에 저장만 될 뿐 아무 동작도 일어나지 않는다"
   }
@@ -3293,9 +3293,9 @@
    "q": "Operator 패턴을 도입하기에 적합한 상황으로 옳은 것은?",
    "options": [
     "백업, 장애 복구 같은 복잡한 운영 절차가 필요한 상태 저장 애플리케이션을 운영할 때",
-    "요청을 처리하고 끝나는 단순한 무상태 웹 서버를 배포할 때",
-    "클러스터에 Pod를 하나만 띄우고 더 이상 운영 작업이 없을 때",
-    "애플리케이션 코드 수정 없이 단순히 이미지 버전만 올릴 때"
+    "요청을 받고 즉시 응답을 반환하는 무상태 웹 서버라도 배포 자동화 수준을 높이려면 반드시 Operator로 전환해 운영해야 하는 상황",
+    "클러스터에 단일 Pod만 띄워 두고 이후 별다른 운영 작업이 발생하지 않을 것으로 예상되는 경우에 운영 부담을 줄이기 위해 도입한다",
+    "애플리케이션 코드는 그대로 둔 채 컨테이너 이미지 태그만 주기적으로 갱신하면 되는 가장 단순한 배포 작업을 자동화할 때"
    ],
    "why": "Operator는 CRD와 Controller로 운영 지식을 코드화한 패턴이라 DB처럼 상태를 가지며 운영 절차가 복잡한 애플리케이션에 적합하고, 단순 stateless 앱에는 오버엔지니어링이다"
   }
@@ -3317,9 +3317,9 @@
    "q": "Operator SDK와 Kubebuilder에 대한 설명으로 옳은 것은?",
    "options": [
     "둘 다 client-go와 controller-runtime을 감싼 코드 생성 도구이며 Kubebuilder는 Go 전용이다",
-    "Kubebuilder는 Ansible과 Helm 기반 Operator만 지원하고 Go는 지원하지 않는다",
-    "Operator SDK는 쿠버네티스 SIG가 공식 유지하는 유일한 도구다",
-    "둘 다 client-go 없이 API 서버와 직접 TCP 소켓으로 통신한다"
+    "Kubebuilder는 Ansible과 Helm 기반 Operator 생성만 지원하도록 설계되었고 Go 언어로 컨트롤러를 작성하는 기능은 애초에 제공하지 않는다",
+    "Operator SDK는 쿠버네티스 SIG(Special Interest Group)가 공식적으로 유지보수하는 유일한 Operator 개발 도구이며 다른 대안은 존재하지 않는다",
+    "두 도구 모두 client-go 라이브러리를 거치지 않고 API 서버와 직접 TCP 소켓을 열어 통신하도록 구현되어 있다"
    ],
    "why": "두 도구 모두 client-go와 controller-runtime을 감싼 코드 생성기이며, Kubebuilder는 Go 전용이고 Operator SDK는 Go/Ansible/Helm을 모두 지원한다"
   }
@@ -3341,9 +3341,9 @@
    "q": "Prometheus Operator, cert-manager 같은 Operator 사례의 공통점으로 옳은 것은?",
    "options": [
     "반복적인 운영 작업을 CRD 기반 선언으로 자동화하지만 Operator 자체의 버그 리스크도 함께 안고 간다",
-    "모든 설정을 YAML이 아닌 바이너리 프로토콜로만 주고받는다",
-    "사람의 개입 없이도 100퍼센트 장애가 발생하지 않음을 보장한다",
-    "쿠버네티스 기본 리소스만 사용하고 CRD는 전혀 쓰지 않는다"
+    "모든 설정 값을 YAML이 아니라 자체 정의한 바이너리 프로토콜로만 주고받도록 강제해 가독성을 포기한다",
+    "사람의 개입 없이도 100퍼센트 장애가 발생하지 않음을 설계 단계에서부터 수학적으로 증명하고 보장한다",
+    "쿠버네티스가 기본 제공하는 리소스만으로 동작하도록 설계되어 CRD는 전혀 정의하거나 사용하지 않는다"
    ],
    "why": "이들 Operator는 반복 운영 작업을 CRD 선언으로 자동화해 부담을 줄여주지만, Operator 자체도 소프트웨어이므로 버그나 업그레이드 리스크를 함께 안고 간다"
   }
@@ -3366,9 +3366,9 @@
    "q": "쿠버네티스 Pod 간 통신 원리로 옳은 것은?",
    "options": [
     "모든 Pod는 NAT 없이 서로의 IP로 직접 통신할 수 있어야 하며 이를 CNI 플러그인이 구현한다",
-    "Pod는 반드시 NAT를 거쳐야만 다른 노드의 Pod와 통신할 수 있다",
-    "같은 Pod 안의 컨테이너들은 서로 다른 네트워크 네임스페이스를 가져 격리된다",
-    "Pod 간 통신은 항상 API 서버를 경유해 중계된다"
+    "Pod는 같은 노드 안에서는 직접 통신하지만 다른 노드의 Pod와 통신할 때는 반드시 NAT 변환을 거쳐야만 한다",
+    "같은 Pod 안에 속한 컨테이너들도 서로 다른 네트워크 네임스페이스를 할당받아 IP가 분리된 채 격리된다",
+    "서로 다른 Pod 사이의 모든 데이터 통신은 반드시 kube-apiserver를 한 번 경유해 중계된 뒤에 전달된다"
    ],
    "why": "쿠버네티스 네트워킹의 전제는 모든 Pod가 NAT 없이 서로의 IP로 직접 통신 가능해야 한다는 것이며, 이를 CNI 플러그인이 오버레이나 BGP 라우팅으로 구현한다"
   }
@@ -3391,9 +3391,9 @@
    "q": "Service의 ClusterIP 동작 방식에 대한 설명으로 옳은 것은?",
    "options": [
     "ClusterIP는 가상 IP일 뿐이며 kube-proxy가 iptables나 IPVS 규칙으로 실제 Pod IP로 변환해준다",
-    "ClusterIP는 실제 네트워크 인터페이스에 할당된 물리 주소다",
-    "IPVS 모드는 규칙을 순차 탐색하는 방식이라 iptables보다 느리다",
-    "kube-proxy 없이도 Pod가 직접 ClusterIP를 해석해 라우팅한다"
+    "ClusterIP는 노드의 실제 네트워크 인터페이스 카드에 할당되어 있는 물리적인 IP 주소이며 변환 과정이 필요 없다",
+    "IPVS 모드는 규칙을 하나씩 순차적으로 탐색하는 방식이라 규칙이 많아질수록 iptables 모드보다 항상 더 느려진다",
+    "kube-proxy가 없어도 각 Pod 내부의 네트워크 스택이 ClusterIP를 직접 해석해 목적지 Pod로 라우팅한다"
    ],
    "why": "ClusterIP는 어느 인터페이스에도 존재하지 않는 가상 IP이며, kube-proxy가 iptables(O(n) 순차 탐색) 또는 IPVS(O(1) 해시테이블) 규칙으로 DNAT 변환을 수행한다"
   }
@@ -3416,9 +3416,9 @@
    "q": "Pod에서 외부 인터넷으로 나가는 트래픽의 흐름으로 옳은 것은?",
    "options": [
     "Pod IP가 SNAT을 거쳐 노드 IP로 바뀐 뒤 클라우드 환경이면 NAT Gateway를 거쳐 외부로 나간다",
-    "Pod IP가 그대로 보존된 채 인터넷까지 전달되어 외부에서 Pod IP를 직접 볼 수 있다",
-    "외부로 나가는 모든 트래픽은 반드시 Ingress 컨트롤러를 거쳐야 한다",
-    "SNAT 대신 DNAT만 적용되어 목적지 주소가 노드 IP로 바뀐다"
+    "Pod IP가 어떤 변환도 거치지 않고 그대로 보존된 채 인터넷까지 전달되므로 외부 서버는 Pod IP를 직접 확인할 수 있다",
+    "Pod에서 외부 인터넷으로 나가는 모든 트래픽은 반드시 클러스터의 Ingress 컨트롤러를 한 번 거쳐야만 외부로 전달된다",
+    "SNAT은 전혀 적용되지 않고 DNAT만 적용되어 패킷의 목적지 주소가 노드 IP로 바뀐 채 전달된다"
    ],
    "why": "iptables MASQUERADE 규칙으로 Pod IP가 노드 IP로 SNAT되고, Private Subnet이면 클라우드 NAT Gateway를 한 번 더 거쳐 Public IP로 나가는 흐름이다"
   }
@@ -3441,9 +3441,9 @@
    "q": "Gateway API가 기존 Ingress의 한계를 개선한 방식으로 옳은 것은?",
    "options": [
     "GatewayClass, Gateway, HTTPRoute로 역할을 분리해 인프라 운영자와 개발자의 권한을 나눌 수 있게 했다",
-    "모든 설정을 단일 리소스에 몰아넣어 관리 포인트를 하나로 줄였다",
-    "vendor별 annotation 의존도를 오히려 더 높여 세밀한 제어를 가능하게 했다",
-    "TCP와 gRPC 라우팅 지원을 없애고 HTTP 전용으로 단순화했다"
+    "인프라 설정과 라우팅 규칙을 전부 단일 리소스 하나에 몰아넣어 관리 포인트를 오히려 하나로 압축시켰다",
+    "vendor별 annotation에 대한 의존도를 기존 Ingress보다 오히려 더 높여서 세밀한 제어가 가능하도록 만들었다",
+    "기존에 지원하던 TCP와 gRPC 라우팅 기능을 완전히 제거하고 오직 HTTP 트래픽만 처리하도록 단순화했다"
    ],
    "why": "Ingress는 단일 리소스에 설정이 뒤섞이고 vendor annotation에 의존하는 한계가 있었지만, Gateway API는 역할을 분리해 네이티브 필드로 가중치 분산·TCP/gRPC 라우팅까지 표준화했다"
   }
@@ -3465,9 +3465,9 @@
    "q": "멀티 클러스터 운영을 고려하는 이유로 옳은 것은?",
    "options": [
     "단일 거대 클러스터는 API 서버 확장성 한계와 설정 실수의 blast radius가 크다는 문제가 있다",
-    "단일 클러스터는 리소스를 무제한으로 확장할 수 있어 멀티 클러스터보다 항상 유리하다",
-    "멀티 클러스터는 네트워킹과 설정 동기화 문제를 완전히 없애준다",
-    "쿠버네티스는 설계상 한 클러스터에 하나의 네임스페이스만 허용한다"
+    "단일 클러스터는 노드를 추가하는 방식만으로 리소스를 사실상 무제한 확장할 수 있어 멀티 클러스터 구성보다 항상 유리하다",
+    "멀티 클러스터로 전환하기만 하면 클러스터 간 네트워킹과 설정 동기화 문제가 자동으로 완전히 해소된다",
+    "쿠버네티스는 설계상 하나의 클러스터 안에 네임스페이스를 단 하나만 생성할 수 있도록 제한한다"
    ],
    "why": "단일 거대 클러스터는 API 서버 확장성 한계와 설정 실수 한 번이 전체에 영향을 주는 blast radius 문제가 있어, 고가용성과 규제 준수를 위해 멀티 클러스터를 고려하게 된다"
   }
@@ -3489,9 +3489,9 @@
    "q": "KubeFed(Federation)의 현재 상태와 실무 대안으로 옳은 것은?",
    "options": [
     "Federation은 사실상 중단되었고 실무는 GitOps 기반의 Push 또는 Pull 분산형 배포로 수렴했다",
-    "Federation은 현재 쿠버네티스의 기본 멀티 클러스터 표준으로 널리 쓰인다",
-    "GitOps는 멀티 클러스터 배포에 사용할 수 없어 Federation만이 유일한 방법이다",
-    "트래픽 분산까지 Federation 하나로 전부 해결하는 것이 표준 방식이다"
+    "Federation은 지금도 쿠버네티스의 공식 기본 멀티 클러스터 표준 기능으로 대부분의 운영 환경에서 널리 쓰인다",
+    "GitOps 방식은 구조적 한계 때문에 멀티 클러스터 배포에 전혀 사용할 수 없어 Federation만이 유일하게 남은 방법이다",
+    "클러스터 간 트래픽 분산까지 Federation 하나의 컴포넌트만으로 전부 해결하는 것이 현재의 표준 방식이다"
    ],
    "why": "Federation은 복잡도 대비 실익이 부족해 커뮤니티가 외면했고, 실무는 ArgoCD ApplicationSet 같은 Push 방식이나 Flux 같은 Pull 방식의 GitOps로 수렴했다"
   }
@@ -3513,9 +3513,9 @@
    "q": "GitOps와 ArgoCD에 대한 설명으로 옳은 것은?",
    "options": [
     "Git을 유일한 진실 원천으로 삼아 클러스터 내 에이전트가 Git 상태를 당겨와 동기화하는 Pull 방식이다",
-    "CI 파이프라인이 클러스터에 직접 kubectl apply를 실행하는 Push 방식을 가리킨다",
-    "클러스터의 kubeconfig를 CI 시스템에 노출해야만 동작하는 구조다",
-    "Git 커밋 이력과 무관하게 클러스터 상태를 수동으로만 관리하는 방식이다"
+    "GitOps는 CI 파이프라인이 클러스터 자격 증명을 가지고 직접 kubectl apply를 실행하는 Push 방식만을 가리키는 용어다",
+    "GitOps가 동작하려면 반드시 클러스터의 kubeconfig 자격 증명을 외부 CI 시스템에 노출시켜야 하는 구조다",
+    "ArgoCD는 Git 커밋 이력과는 무관하게 운영자가 클러스터 상태를 매번 수동으로만 관리하도록 강제하는 방식이다"
    ],
    "why": "GitOps는 Git을 SOT로 삼고 ArgoCD 같은 클러스터 내 에이전트가 Git을 당겨와 Synced/OutOfSync를 비교하는 Pull 방식이라 CI에 kubeconfig를 노출할 필요가 없다"
   }
@@ -3537,9 +3537,9 @@
    "q": "Flux와 ArgoCD의 선택 기준으로 옳은 것은?",
    "options": [
     "시각적 대시보드와 멀티클러스터 관리 UI가 중요하면 ArgoCD, 가볍고 모듈화된 파이프라인이 중요하면 Flux를 고려한다",
-    "Flux는 강력한 웹 UI를 제공하고 ArgoCD는 UI 없이 CLI로만 동작한다",
-    "둘 다 Push 방식으로 동작해 클러스터에 직접 접근 권한을 넘겨줘야 한다",
-    "ArgoCD는 여러 독립 Controller로 쪼개져 있고 Flux는 단일 통합 플랫폼이다"
+    "Flux는 강력한 시각적 웹 UI와 대시보드를 기본 제공하고 ArgoCD는 UI 없이 오직 CLI 명령으로만 동작한다",
+    "ArgoCD와 Flux 둘 다 Push 방식으로만 동작해 CI 시스템에 클러스터 접근 권한을 직접 넘겨줘야 한다",
+    "ArgoCD는 Source, Kustomize, Helm 같은 여러 독립 Controller로 쪼개져 있고 Flux는 단일 통합 플랫폼으로 제공된다"
    ],
    "why": "ArgoCD는 강력한 웹 UI와 Application CRD 중심의 통합 플랫폼이고, Flux는 Source·Kustomize·Helm Controller로 쪼개진 모듈화된 CLI 우선 도구라는 차이가 선택 기준이 된다"
   }
@@ -3562,9 +3562,9 @@
    "q": "Pod를 늘려도 응답 지연이 줄지 않을 때 확인해야 할 지표로 옳은 것은?",
    "options": [
     "DB 커넥션 풀 포화나 다운스트림 서비스 응답 시간처럼 컴퓨팅 외 병목 지점을 확인한다",
-    "Pod 개수를 더 늘리기만 하면 병목 원인과 무관하게 항상 지연이 해결된다",
-    "CPU와 메모리 사용률이 낮다면 다른 지표는 확인할 필요가 없다",
-    "로드밸런서나 Ingress의 큐잉 지연은 Pod 증설과 전혀 관련이 없다"
+    "Pod 개수를 지금보다 더 늘리기만 하면 실제 병목 원인이 무엇이든 상관없이 항상 지연 문제가 해결된다",
+    "CPU와 메모리 사용률 지표만 낮게 나온다면 그 밖의 다른 지표는 더 확인할 필요가 전혀 없다",
+    "로드밸런서나 Ingress 레벨에서 발생하는 큐잉 지연은 Pod 증설 여부와는 전혀 관련이 없는 독립적인 문제다"
    ],
    "why": "Pod를 늘려도 느리다면 병목이 컴퓨팅이 아니라 DB 커넥션 풀, 다운스트림 응답 시간, 큐잉 지연 같은 다른 곳에 있다는 신호다"
   }
@@ -3587,9 +3587,9 @@
    "q": "Pod가 반복해서 재시작할 때의 원인 진단 절차로 옳은 것은?",
    "options": [
     "describe pod의 Exit Code로 먼저 분류한 뒤 logs previous와 Events로 원인을 좁혀간다",
-    "원인 파악 없이 바로 Deployment를 삭제하고 처음부터 다시 생성한다",
-    "Exit Code는 항상 애플리케이션 버그만을 의미하므로 로그 확인이 불필요하다",
-    "Events 섹션은 쿠버네티스 레벨 정보를 담지 않으므로 확인할 필요가 없다"
+    "원인을 전혀 파악하지 않은 채 곧바로 Deployment를 삭제하고 처음부터 다시 생성하는 것이 권장 절차다",
+    "Exit Code 값은 항상 애플리케이션 코드의 버그만을 의미하므로 로그를 별도로 확인할 필요가 전혀 없다",
+    "describe pod의 Events 섹션은 쿠버네티스 레벨의 정보를 전혀 담지 않으므로 굳이 확인할 필요가 없다"
    ],
    "why": "describe pod의 Exit Code(1=앱 에러, 137=OOMKilled, 143=SIGTERM)로 1차 분류한 뒤 logs previous와 Events로 단계적으로 원인을 좁혀가는 것이 표준 절차다"
   }
@@ -3612,9 +3612,9 @@
    "q": "Metrics Server의 자원 메트릭과 애플리케이션 메트릭의 차이로 옳은 것은?",
    "options": [
     "자원 메트릭은 CPU와 메모리만 자동 수집하고 애플리케이션 메트릭은 개발자가 직접 계측해야 한다",
-    "애플리케이션 메트릭은 쿠버네티스가 기본으로 자동 수집해준다",
-    "자원 메트릭은 과거 데이터를 영구 저장해 장기 추세 분석에 쓰인다",
-    "둘 다 동일한 지표를 수집하므로 하나만 있으면 충분하다"
+    "요청 수나 에러율 같은 애플리케이션 메트릭도 쿠버네티스가 Metrics Server를 통해 기본으로 자동 수집해준다",
+    "Metrics Server가 수집하는 자원 메트릭은 디스크에 과거 데이터를 영구 저장해 장기 추세 분석 용도로 쓰인다",
+    "자원 메트릭과 애플리케이션 메트릭은 결국 동일한 지표를 수집하는 것이므로 둘 중 하나만 있어도 충분하다"
    ],
    "why": "Metrics Server는 CPU/메모리만 메모리 내 보관하며 자동 수집하고, 요청 수·에러율·지연시간 같은 애플리케이션 메트릭은 개발자가 직접 계측해야 한다"
   }
@@ -3637,9 +3637,9 @@
    "q": "RBAC과 NetworkPolicy가 각각 제어하는 영역으로 옳은 것은?",
    "options": [
     "RBAC은 API 호출 권한을, NetworkPolicy는 Pod 간 실제 네트워크 통신을 제어하며 서로 대체할 수 없다",
-    "RBAC을 완벽히 설정하면 NetworkPolicy 없이도 Pod 간 통신이 자동으로 제한된다",
-    "NetworkPolicy는 API 서버 호출 권한을 제어하고 RBAC은 패킷 흐름을 제어한다",
-    "둘은 동일한 계층에서 동작하므로 하나만 적용해도 충분하다"
+    "RBAC 권한 설정만 완벽하게 해 두면 NetworkPolicy를 별도로 정의하지 않아도 Pod 간 네트워크 통신이 자동으로 제한된다",
+    "NetworkPolicy가 API 서버에 대한 호출 권한을 제어하고 반대로 RBAC이 Pod 간 패킷 흐름을 제어하는 구조다",
+    "RBAC과 NetworkPolicy는 결국 동일한 계층에서 동일한 대상을 제어하므로 둘 중 하나만 적용해도 충분하다"
    ],
    "why": "RBAC은 관리 평면에서 API 호출 권한을, NetworkPolicy는 데이터 평면에서 Pod 간 패킷 흐름을 제어하는 독립적인 이중 방어 체계다"
   }
