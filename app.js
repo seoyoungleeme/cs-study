@@ -63,11 +63,19 @@ function toast(msg, ms=2200){
 }
 
 /* 아주 작은 마크다운 렌더러. 답변 JSON 은 우리가 만든 것이지만 일단 이스케이프한다. */
+const isHeadRow = s => /^\|.*\|$/.test(s);
+const isRow = s => /^\|/.test(s);           // 끝 파이프가 없어도 한 행으로 본다
+const SEP = '\u0000';
+const cells = s => s.replace(/^\|/, '').replace(/\|$/, '')
+  .replace(/\\\|/g, SEP)                    // 칸 안의 \| 는 쪼개는 기준이 아니다
+  .split('|').map(c => c.trim().split(SEP).join('|'));
+
 function md(src){
   const lines = esc(src).split('\n');
   let html = '', inUl = false, inPre = false, buf = [];
   const closeUl = () => { if (inUl){ html += '</ul>'; inUl = false; } };
-  for (const raw of lines){
+  for (let i = 0; i < lines.length; i++){
+    const raw = lines[i];
     if (raw.trimStart().startsWith('```')){
       if (inPre){ html += '<pre><code>' + buf.join('\n') + '</code></pre>'; buf = []; inPre = false; }
       else { closeUl(); inPre = true; }
@@ -76,6 +84,23 @@ function md(src){
     if (inPre){ buf.push(raw); continue; }
     const line = raw.trim();
     if (!line){ closeUl(); continue; }
+    // 구분선. 본문 맨 앞의 것은 이미 테두리가 있으니 버린다
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(line)){ closeUl(); if (html) html += '<hr>'; continue; }
+    // 표. 머리행 + 구분행이 붙어 있을 때만 표로 본다
+    if (isHeadRow(line) && /^\|[\s:|-]+\|$/.test((lines[i+1] || '').trim())){
+      closeUl();
+      const head = cells(line);
+      const rows = [];
+      i += 2;
+      while (i < lines.length && isRow(lines[i].trim())){ rows.push(cells(lines[i].trim())); i++; }
+      i--;
+      html += '<div class="tw"><table><thead><tr>'
+        + head.map(c => '<th>' + inline(c) + '</th>').join('')
+        + '</tr></thead><tbody>'
+        + rows.map(r => '<tr>' + r.map(c => '<td>' + inline(c) + '</td>').join('') + '</tr>').join('')
+        + '</tbody></table></div>';
+      continue;
+    }
     const h = /^(#{3,4})\s+(.*)$/.exec(line);
     if (h){ closeUl(); html += '<h4>' + inline(h[2]) + '</h4>'; continue; }
     const li = /^[-*]\s+(.*)$/.exec(line);

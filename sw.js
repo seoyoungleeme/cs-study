@@ -1,6 +1,6 @@
 /* 오프라인용 서비스워커.
    셸과 질문 목록은 설치 시 미리 받고, 답변 파일은 읽을 때 캐시에 쌓는다. */
-const VERSION = 'csq-v3';
+const VERSION = 'csq-v4';
 const SHELL = [
   './', 'index.html', 'app.css', 'app.js',
   'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png',
